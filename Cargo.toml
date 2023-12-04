@@ -8,3 +8,7 @@ debug = true
 
 [profile.release]
 debug = true
+
+[patch."crates-io"]
+rustls = { git = "https://github.com/cpu/rustls", rev = "9d547f70ba60fe3f3b5e68f41f14b9354c545ff1" }
+rustls-platform-verifier = { git = "https://github.com/cpu/rustls-platform-verifier", rev = "65120b32c2875043e5d7b6878ce1891955936f4a" }

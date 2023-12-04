@@ -28,8 +28,8 @@ use crate::{
         EndpointEventInner, IssuedCid,
     },
     transport_parameters::TransportParameters,
-    ResetToken, RetryToken, Transmit, TransportConfig, TransportError, INITIAL_MTU,
-    MAX_CID_SIZE, MIN_INITIAL_SIZE, RESET_TOKEN_SIZE,
+    ResetToken, RetryToken, Transmit, TransportConfig, TransportError, INITIAL_MTU, MAX_CID_SIZE,
+    MIN_INITIAL_SIZE, RESET_TOKEN_SIZE,
 };
 
 /// The main entry point to the library

@@ -1,12 +1,13 @@
-use std::{any::Any, convert::TryInto, io, str, sync::Arc};
+use std::{any::Any, io, str, sync::Arc};
 
 use bytes::BytesMut;
 use ring::aead;
 pub use rustls::Error;
 use rustls::{
     self,
-    quic::{Connection, HeaderProtectionKey, KeyChange, PacketKey, Secrets, Version},
+    quic::{Connection, HeaderProtectionKey, KeyChange, PacketKey, Secrets, Suite, Version},
 };
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 
 use crate::{
     crypto::{self, CryptoError, ExportKeyingMaterialError, HeaderKey, KeyPair, Keys},
@@ -29,6 +30,7 @@ pub struct TlsSession {
     got_handshake_data: bool,
     next_secrets: Option<Secrets>,
     inner: Connection,
+    suite: Suite,
 }
 
 impl TlsSession {
@@ -42,7 +44,7 @@ impl TlsSession {
 
 impl crypto::Session for TlsSession {
     fn initial_keys(&self, dst_cid: &ConnectionId, side: Side) -> Keys {
-        initial_keys(self.version, dst_cid, side)
+        initial_keys(self.version, dst_cid, side, &self.suite)
     }
 
     fn handshake_data(&self) -> Option<Box<dyn Any>> {
@@ -59,9 +61,9 @@ impl crypto::Session for TlsSession {
     }
 
     fn peer_identity(&self) -> Option<Box<dyn Any>> {
-        self.inner
-            .peer_certificates()
-            .map(|v| -> Box<dyn Any> { Box::new(v.to_vec()) })
+        self.inner.peer_certificates().map(|v| -> Box<dyn Any> {
+            Box::new(v.iter().map(|v| v.clone().into_owned()).collect::<Vec<_>>())
+        })
     }
 
     fn early_crypto(&self) -> Option<(Box<dyn HeaderKey>, Box<dyn crypto::PacketKey>)> {
@@ -202,7 +204,7 @@ const RETRY_INTEGRITY_NONCE_V1: [u8; 12] = [
     0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63, 0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb,
 ];
 
-impl crypto::HeaderKey for HeaderProtectionKey {
+impl crypto::HeaderKey for Box<dyn HeaderProtectionKey> {
     fn decrypt(&self, pn_offset: usize, packet: &mut [u8]) {
         let (header, sample) = packet.split_at_mut(pn_offset + 4);
         let (first, rest) = header.split_at_mut(1);
@@ -252,6 +254,7 @@ impl crypto::ClientConfig for rustls::ClientConfig {
         params: &TransportParameters,
     ) -> Result<Box<dyn crypto::Session>, ConnectError> {
         let version = interpret_version(version)?;
+        let suite = suite_from_provider(self.crypto_provider()).unwrap();
         Ok(Box::new(TlsSession {
             version,
             got_handshake_data: false,
@@ -260,13 +263,14 @@ impl crypto::ClientConfig for rustls::ClientConfig {
                 rustls::quic::ClientConnection::new(
                     self,
                     version,
-                    server_name
-                        .try_into()
-                        .map_err(|_| ConnectError::InvalidDnsName(server_name.into()))?,
+                    ServerName::try_from(server_name)
+                        .map_err(|_| ConnectError::InvalidDnsName(server_name.into()))?
+                        .to_owned(),
                     to_vec(params),
                 )
                 .unwrap(),
             ),
+            suite,
         }))
     }
 }
@@ -278,6 +282,7 @@ impl crypto::ServerConfig for rustls::ServerConfig {
         params: &TransportParameters,
     ) -> Box<dyn crypto::Session> {
         let version = interpret_version(version).unwrap();
+        let suite = suite_from_provider(self.crypto_provider()).unwrap();
         Box::new(TlsSession {
             version,
             got_handshake_data: false,
@@ -285,12 +290,15 @@ impl crypto::ServerConfig for rustls::ServerConfig {
             inner: rustls::quic::Connection::Server(
                 rustls::quic::ServerConnection::new(self, version, to_vec(params)).unwrap(),
             ),
+            suite,
         })
     }
 
     fn initial_keys(&self, version: u32, dst_cid: &ConnectionId) -> Result<Keys, CryptoError> {
         let version = interpret_version(version)?;
-        Ok(initial_keys(version, dst_cid, Side::Server))
+        // We validate that this works on configuration, so we can `unwrap()` here.
+        let suite = suite_from_provider(self.crypto_provider()).unwrap();
+        Ok(initial_keys(version, dst_cid, Side::Server, &suite))
     }
 
     fn retry_tag(&self, version: u32, orig_dst_cid: &ConnectionId, packet: &[u8]) -> [u8; 16] {
@@ -318,14 +326,32 @@ impl crypto::ServerConfig for rustls::ServerConfig {
     }
 }
 
+pub(crate) fn suite_from_provider(provider: &Arc<rustls::crypto::CryptoProvider>) -> Option<Suite> {
+    provider
+        .cipher_suites
+        .iter()
+        .find_map(|cs| match (cs.suite(), cs.tls13()) {
+            (rustls::CipherSuite::TLS13_AES_128_GCM_SHA256, Some(suite)) => {
+                Some(suite.quic_suite())
+            }
+            _ => None,
+        })
+        .flatten()
+}
+
 fn to_vec(params: &TransportParameters) -> Vec<u8> {
     let mut bytes = Vec::new();
     params.write(&mut bytes);
     bytes
 }
 
-pub(crate) fn initial_keys(version: Version, dst_cid: &ConnectionId, side: Side) -> Keys {
-    let keys = rustls::quic::Keys::initial(version, dst_cid, side.into());
+pub(crate) fn initial_keys(
+    version: Version,
+    dst_cid: &ConnectionId,
+    side: Side,
+    suite: &Suite,
+) -> Keys {
+    let keys = suite.keys(dst_cid, side.into(), version);
     Keys {
         header: KeyPair {
             local: Box::new(keys.local.header),
@@ -338,7 +364,7 @@ pub(crate) fn initial_keys(version: Version, dst_cid: &ConnectionId, side: Side)
     }
 }
 
-impl crypto::PacketKey for PacketKey {
+impl crypto::PacketKey for Box<dyn PacketKey> {
     fn encrypt(&self, packet: u64, buf: &mut [u8], header_len: usize) {
         let (header, payload_tag) = buf.split_at_mut(header_len);
         let (payload, tag_storage) = payload_tag.split_at_mut(payload_tag.len() - self.tag_len());
@@ -361,15 +387,15 @@ impl crypto::PacketKey for PacketKey {
     }
 
     fn tag_len(&self) -> usize {
-        self.tag_len()
+        (**self).tag_len()
     }
 
     fn confidentiality_limit(&self) -> u64 {
-        self.confidentiality_limit()
+        (**self).confidentiality_limit()
     }
 
     fn integrity_limit(&self) -> u64 {
-        self.integrity_limit()
+        (**self).integrity_limit()
     }
 }
 
@@ -378,13 +404,13 @@ impl crypto::PacketKey for PacketKey {
 /// QUIC requires that TLS 1.3 be enabled. Advanced users can use any [`rustls::ClientConfig`] that
 /// satisfies this requirement.
 pub(crate) fn client_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
-    let mut cfg = rustls::ClientConfig::builder()
-        .with_safe_default_cipher_suites()
-        .with_safe_default_kx_groups()
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .unwrap()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let mut cfg = rustls::ClientConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_protocol_versions(&[&rustls::version::TLS13])
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     cfg.enable_early_data = true;
     cfg
 }
@@ -395,16 +421,16 @@ pub(crate) fn client_config(roots: rustls::RootCertStore) -> rustls::ClientConfi
 /// `u32::MAX`. Advanced users can use any [`rustls::ServerConfig`] that satisfies these
 /// requirements.
 pub(crate) fn server_config(
-    cert_chain: Vec<rustls::Certificate>,
-    key: rustls::PrivateKey,
+    cert_chain: Vec<CertificateDer<'static>>,
+    key: PrivateKeyDer<'static>,
 ) -> Result<rustls::ServerConfig, Error> {
-    let mut cfg = rustls::ServerConfig::builder()
-        .with_safe_default_cipher_suites()
-        .with_safe_default_kx_groups()
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .unwrap()
-        .with_no_client_auth()
-        .with_single_cert(cert_chain, key)?;
+    let mut cfg = rustls::ServerConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(cert_chain, key)?;
     cfg.max_early_data_size = u32::MAX;
     Ok(cfg)
 }

@@ -76,8 +76,10 @@ struct Context {
 impl Context {
     fn new() -> Self {
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-        let key = rustls::PrivateKey(cert.serialize_private_key_der());
-        let cert = rustls::Certificate(cert.serialize_der().unwrap());
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(
+            rustls_pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der()),
+        );
+        let cert = rustls_pki_types::CertificateDer::from(cert.serialize_der().unwrap());
 
         let mut server_config =
             quinn::ServerConfig::with_single_cert(vec![cert.clone()], key).unwrap();
@@ -85,7 +87,7 @@ impl Context {
         transport_config.max_concurrent_uni_streams(1024_u16.into());
 
         let mut roots = rustls::RootCertStore::empty();
-        roots.add(&cert).unwrap();
+        roots.add(cert).unwrap();
 
         let client_config = quinn::ClientConfig::with_root_certificates(roots);
         Self {

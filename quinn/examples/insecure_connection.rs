@@ -31,8 +31,9 @@ async fn run_server(addr: SocketAddr) {
 }
 
 async fn run_client(server_addr: SocketAddr) -> Result<(), Box<dyn Error>> {
+    let provider = rustls::crypto::CryptoProvider::get_default().unwrap();
     let mut endpoint = Endpoint::client("127.0.0.1:0".parse().unwrap())?;
-    endpoint.set_default_client_config(configure_client());
+    endpoint.set_default_client_config(configure_client(provider.clone()));
 
     // connect to server
     let connection = endpoint
@@ -51,32 +52,64 @@ async fn run_client(server_addr: SocketAddr) -> Result<(), Box<dyn Error>> {
 
 /// Dummy certificate verifier that treats any certificate as valid.
 /// NOTE, such verification is vulnerable to MITM attacks, but convenient for testing.
-struct SkipServerVerification;
+#[derive(Debug)]
+struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
 
 impl SkipServerVerification {
-    fn new() -> Arc<Self> {
-        Arc::new(Self)
+    fn new(provider: Arc<rustls::crypto::CryptoProvider>) -> Arc<Self> {
+        Arc::new(Self(provider))
     }
 }
 
-impl rustls::client::ServerCertVerifier for SkipServerVerification {
+impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
-        _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
+        _ocsp: &[u8],
+        _now: rustls_pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
     }
 }
 
-fn configure_client() -> ClientConfig {
+fn configure_client(provider: Arc<rustls::crypto::CryptoProvider>) -> ClientConfig {
     let crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_custom_certificate_verifier(SkipServerVerification::new())
+        .dangerous()
+        .with_custom_certificate_verifier(SkipServerVerification::new(provider))
         .with_no_client_auth();
 
     ClientConfig::new(Arc::new(crypto))

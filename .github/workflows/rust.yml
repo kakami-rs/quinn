@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ['main', '0.8.x']
+    branches: ['main', '0.8.x', 'cpu-*']
   pull_request:
   schedule:
     - cron: "21 3 * * 5"
@@ -49,6 +49,10 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
+      - if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-ninja@v4
       - run: cargo build --all-targets
       - run: cargo test
       - run: cargo test --manifest-path fuzz/Cargo.toml

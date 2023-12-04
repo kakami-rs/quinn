@@ -6,7 +6,7 @@ use clap::Parser;
 use quinn::TokioRuntime;
 use tracing::{debug, error, info};
 
-use perf::{bind_socket, noprotection::NoProtectionServerConfig};
+use perf::{bind_socket, noprotection::NoProtectionServerConfig, PERF_CIPHER_SUITES};
 
 #[derive(Parser)]
 #[clap(name = "server")]
@@ -59,23 +59,36 @@ async fn run(opt: Opt) -> Result<()> {
 
             let mut certs = Vec::new();
             for cert in rustls_pemfile::certs(&mut cert.as_ref()).context("parsing cert")? {
-                certs.push(rustls::Certificate(cert));
+                certs.push(rustls_pki_types::CertificateDer::from(cert));
             }
 
-            (rustls::PrivateKey(key), certs)
+            (
+                rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+                    key,
+                )),
+                certs,
+            )
         }
         _ => {
             let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
             (
-                rustls::PrivateKey(cert.serialize_private_key_der()),
-                vec![rustls::Certificate(cert.serialize_der().unwrap())],
+                rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+                    cert.serialize_private_key_der(),
+                )),
+                vec![rustls_pki_types::CertificateDer::from(
+                    cert.serialize_der().unwrap(),
+                )],
             )
         }
     };
 
-    let mut crypto = rustls::ServerConfig::builder()
-        .with_cipher_suites(perf::PERF_CIPHER_SUITES)
-        .with_safe_default_kx_groups()
+    let default_provider = rustls::crypto::aws_lc_rs::default_provider();
+    let provider = rustls::crypto::CryptoProvider {
+        cipher_suites: PERF_CIPHER_SUITES.into(),
+        ..default_provider
+    };
+
+    let mut crypto = rustls::ServerConfig::builder_with_provider(provider.into())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .unwrap()
         .with_no_client_auth()

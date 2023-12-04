@@ -229,14 +229,16 @@ fn endpoint() -> Endpoint {
 
 fn endpoint_with_config(transport_config: TransportConfig) -> Endpoint {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert = rustls::Certificate(cert.serialize_der().unwrap());
+    let key = rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+        cert.serialize_private_key_der(),
+    ));
+    let cert = rustls_pki_types::CertificateDer::from(cert.serialize_der().unwrap());
     let transport_config = Arc::new(transport_config);
     let mut server_config = crate::ServerConfig::with_single_cert(vec![cert.clone()], key).unwrap();
     server_config.transport_config(transport_config.clone());
 
     let mut roots = rustls::RootCertStore::empty();
-    roots.add(&cert).unwrap();
+    roots.add(cert).unwrap();
     let mut endpoint = Endpoint::server(
         server_config,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
@@ -434,9 +436,11 @@ fn run_echo(args: EchoArgs) {
         // We don't use the `endpoint` helper here because we want two different endpoints with
         // different addresses.
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-        let key = rustls::PrivateKey(cert.serialize_private_key_der());
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(
+            rustls_pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der()),
+        );
         let cert_der = cert.serialize_der().unwrap();
-        let cert = rustls::Certificate(cert_der);
+        let cert = rustls_pki_types::CertificateDer::from(cert_der);
         let mut server_config =
             crate::ServerConfig::with_single_cert(vec![cert.clone()], key).unwrap();
 
@@ -456,11 +460,14 @@ fn run_echo(args: EchoArgs) {
         };
 
         let mut roots = rustls::RootCertStore::empty();
-        roots.add(&cert).unwrap();
-        let mut client_crypto = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+        roots.add(cert).unwrap();
+        let mut client_crypto = rustls::ClientConfig::builder_with_provider(
+            rustls::crypto::ring::default_provider().into(),
+        )
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
         client_crypto.key_log = Arc::new(rustls::KeyLogFile::new());
 
         let mut client = {
@@ -617,18 +624,23 @@ async fn rebind_recv() {
     let _guard = subscribe();
 
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert = rustls::Certificate(cert.serialize_der().unwrap());
+    let key = rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+        cert.serialize_private_key_der(),
+    ));
+    let cert = rustls_pki_types::CertificateDer::from(cert.serialize_der().unwrap());
 
     let mut roots = rustls::RootCertStore::empty();
-    roots.add(&cert).unwrap();
+    roots.add(cert.clone()).unwrap();
 
     let mut client = Endpoint::client(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).unwrap();
     let mut client_config = ClientConfig::new(Arc::new(
-        rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(roots)
-            .with_no_client_auth(),
+        rustls::ClientConfig::builder_with_provider(
+            rustls::crypto::ring::default_provider().into(),
+        )
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth(),
     ));
     client_config.transport_config(Arc::new({
         let mut cfg = TransportConfig::default();

@@ -58,7 +58,7 @@ fn connect_n_nodes_to_1_and_send_1mb_data() {
     };
     runtime.spawn(read_incoming_data);
 
-    let client_cfg = configure_connector(&listener_cert);
+    let client_cfg = configure_connector(listener_cert);
 
     for _ in 0..expected_messages {
         let data = random_data_with_hash(1024 * 1024, &crc);
@@ -125,7 +125,9 @@ async fn write_to_peer(conn: quinn::Connection, data: Vec<u8>) -> Result<(), Wri
 }
 
 /// Builds client configuration. Trusts given node certificate.
-fn configure_connector(node_cert: &rustls::Certificate) -> quinn::ClientConfig {
+fn configure_connector(
+    node_cert: rustls_pki_types::CertificateDer<'static>,
+) -> quinn::ClientConfig {
     let mut roots = rustls::RootCertStore::empty();
     roots.add(node_cert).unwrap();
 
@@ -138,10 +140,16 @@ fn configure_connector(node_cert: &rustls::Certificate) -> quinn::ClientConfig {
 }
 
 /// Builds listener configuration along with its certificate.
-fn configure_listener() -> (quinn::ServerConfig, rustls::Certificate) {
+fn configure_listener() -> (
+    quinn::ServerConfig,
+    rustls_pki_types::CertificateDer<'static>,
+) {
     let (our_cert, our_priv_key) = gen_cert();
-    let mut our_cfg =
-        quinn::ServerConfig::with_single_cert(vec![our_cert.clone()], our_priv_key).unwrap();
+    let mut our_cfg = quinn::ServerConfig::with_single_cert(
+        vec![our_cert.clone()],
+        rustls_pki_types::PrivateKeyDer::Pkcs8(our_priv_key),
+    )
+    .unwrap();
 
     let transport_config = Arc::get_mut(&mut our_cfg.transport).unwrap();
     transport_config.max_idle_timeout(Some(Duration::from_secs(20).try_into().unwrap()));
@@ -149,10 +157,16 @@ fn configure_listener() -> (quinn::ServerConfig, rustls::Certificate) {
     (our_cfg, our_cert)
 }
 
-fn gen_cert() -> (rustls::Certificate, rustls::PrivateKey) {
+fn gen_cert() -> (
+    rustls_pki_types::CertificateDer<'static>,
+    rustls_pki_types::PrivatePkcs8KeyDer<'static>,
+) {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
-    let key = rustls::PrivateKey(cert.serialize_private_key_der());
-    (rustls::Certificate(cert.serialize_der().unwrap()), key)
+    let key = rustls_pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der());
+    (
+        rustls_pki_types::CertificateDer::from(cert.serialize_der().unwrap()),
+        key,
+    )
 }
 
 /// Constructs a buffer with random bytes of given size prefixed with a hash of this data.

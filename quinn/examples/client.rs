@@ -71,12 +71,12 @@ async fn run(options: Opt) -> Result<()> {
 
     let mut roots = rustls::RootCertStore::empty();
     if let Some(ca_path) = options.ca {
-        roots.add(&rustls::Certificate(fs::read(ca_path)?))?;
+        roots.add(rustls_pki_types::CertificateDer::from(fs::read(ca_path)?))?;
     } else {
         let dirs = directories_next::ProjectDirs::from("org", "quinn", "quinn-examples").unwrap();
         match fs::read(dirs.data_local_dir().join("cert.der")) {
             Ok(cert) => {
-                roots.add(&rustls::Certificate(cert))?;
+                roots.add(rustls_pki_types::CertificateDer::from(cert))?;
             }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
                 info!("local server certificate not found");
@@ -87,7 +87,6 @@ async fn run(options: Opt) -> Result<()> {
         }
     }
     let mut client_crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth();
 

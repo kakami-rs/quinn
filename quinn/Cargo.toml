@@ -20,7 +20,7 @@ default = ["platform-verifier", "tls-rustls", "runtime-tokio", "log"]
 lock_tracking = []
 # Provides `ClientConfig::with_platform_verifier()` convenience method
 platform-verifier = ["proto/platform-verifier"]
-tls-rustls = ["rustls", "proto/tls-rustls", "ring"]
+tls-rustls = ["rustls", "rustls-pki-types", "proto/tls-rustls", "ring"]
 # Enables `Endpoint::client` and `Endpoint::server` conveniences
 ring = ["proto/ring"]
 runtime-tokio = ["tokio/time", "tokio/rt", "tokio/net"]
@@ -43,7 +43,8 @@ futures-io = { version = "0.3.19", optional = true }
 rustc-hash = "1.1"
 pin-project-lite = "0.2"
 proto = { package = "quinn-proto", path = "../quinn-proto", version = "0.11", default-features = false }
-rustls = { version = "0.21.0", default-features = false, features = ["quic"], optional = true }
+rustls-pki-types = { version = "1", optional = true }
+rustls = { version = "0.23.0-alpha.0", default-features = false, optional = true }
 smol = { version = "2", optional = true }
 thiserror = "1.0.21"
 tracing = "0.1.10"
@@ -74,7 +75,6 @@ required-features = ["tls-rustls"]
 
 [[example]]
 name = "insecure_connection"
-required-features = ["rustls/dangerous_configuration"]
 
 [[example]]
 name = "single_socket"

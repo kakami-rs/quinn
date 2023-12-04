@@ -21,8 +21,10 @@ fn main() {
     configure_tracing_subscriber();
 
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert = rustls::Certificate(cert.serialize_der().unwrap());
+    let key = rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+        cert.serialize_private_key_der(),
+    ));
+    let cert = rustls_pki_types::CertificateDer::from(cert.serialize_der().unwrap());
 
     let server_span = tracing::error_span!("server");
     let runtime = rt();
@@ -111,7 +113,7 @@ async fn server(endpoint: quinn::Endpoint, opt: Opt) -> Result<()> {
 
 async fn client(
     server_addr: SocketAddr,
-    server_cert: rustls::Certificate,
+    server_cert: rustls_pki_types::CertificateDer<'static>,
     opt: Opt,
 ) -> Result<ClientStats> {
     let (endpoint, connection) = connect_client(server_addr, server_cert, opt).await?;
