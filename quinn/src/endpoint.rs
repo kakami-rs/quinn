@@ -19,7 +19,8 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use pin_project_lite::pin_project;
 use proto::{
-    self as proto, ClientConfig, ConnectError, ConnectionHandle, DatagramEvent, ServerConfig,
+    self as proto, ClientConfig, ConnectError, ConnectionHandle, DatagramEvent, EndpointEvent,
+    ServerConfig,
 };
 use rustc_hash::FxHashMap;
 use tokio::sync::{futures::Notified, mpsc, Notify};
@@ -27,9 +28,8 @@ use tracing::{Instrument, Span};
 use udp::{RecvMeta, BATCH_SIZE};
 
 use crate::{
-    connection::Connecting, work_limiter::WorkLimiter, ConnectionEvent, EndpointConfig,
-    EndpointEvent, VarInt, IO_LOOP_BOUND, MAX_TRANSMIT_QUEUE_CONTENTS_LEN, RECV_TIME_BOUND,
-    SEND_TIME_BOUND,
+    connection::Connecting, work_limiter::WorkLimiter, ConnectionEvent, EndpointConfig, VarInt,
+    IO_LOOP_BOUND, MAX_TRANSMIT_QUEUE_CONTENTS_LEN, RECV_TIME_BOUND, SEND_TIME_BOUND,
 };
 
 /// A QUIC endpoint.
@@ -534,35 +534,25 @@ impl State {
     }
 
     fn handle_events(&mut self, cx: &mut Context, shared: &Shared) -> bool {
-        use EndpointEvent::*;
         for _ in 0..IO_LOOP_BOUND {
             match self.events.poll_recv(cx) {
-                Poll::Ready(Some((ch, event))) => match event {
-                    Proto(e) => {
-                        if e.is_drained() {
-                            self.connections.senders.remove(&ch);
-                            if self.connections.is_empty() {
-                                shared.idle.notify_waiters();
-                            }
-                        }
-                        if let Some(event) = self.inner.handle_event(ch, e) {
-                            // Ignoring errors from dropped connections that haven't yet been cleaned up
-                            let _ = self
-                                .connections
-                                .senders
-                                .get_mut(&ch)
-                                .unwrap()
-                                .send(ConnectionEvent::Proto(event));
+                Poll::Ready(Some((ch, e))) => {
+                    if e.is_drained() {
+                        self.connections.senders.remove(&ch);
+                        if self.connections.is_empty() {
+                            shared.idle.notify_waiters();
                         }
                     }
-                    Transmit(t, buf) => {
-                        let contents_len = buf.len();
-                        self.outgoing.push_back(udp_transmit(t, buf));
-                        self.transmit_queue_contents_len = self
-                            .transmit_queue_contents_len
-                            .saturating_add(contents_len);
+                    if let Some(event) = self.inner.handle_event(ch, e) {
+                        // Ignoring errors from dropped connections that haven't yet been cleaned up
+                        let _ = self
+                            .connections
+                            .senders
+                            .get_mut(&ch)
+                            .unwrap()
+                            .send(ConnectionEvent::Proto(event));
                     }
-                },
+                }
                 Poll::Ready(None) => unreachable!("EndpointInner owns one sender"),
                 Poll::Pending => {
                     return false;

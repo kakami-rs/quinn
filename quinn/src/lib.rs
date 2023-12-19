@@ -96,12 +96,6 @@ enum ConnectionEvent {
     Rebind(Arc<dyn AsyncUdpSocket>),
 }
 
-#[derive(Debug)]
-enum EndpointEvent {
-    Proto(proto::EndpointEvent),
-    Transmit(proto::Transmit, Bytes),
-}
-
 /// Maximum number of datagrams processed in send/recv calls to make before moving on to other processing
 ///
 /// This helps ensure we don't starve anything when the CPU is slower than the link.
