@@ -41,7 +41,7 @@
 #![warn(unreachable_pub)]
 #![warn(clippy::use_self)]
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 macro_rules! ready {
     ($e:expr $(,)?) => {
@@ -93,7 +93,7 @@ enum ConnectionEvent {
         reason: bytes::Bytes,
     },
     Proto(proto::ConnectionEvent),
-    Ping,
+    Rebind(Arc<dyn AsyncUdpSocket>),
 }
 
 #[derive(Debug)]
