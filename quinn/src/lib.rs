@@ -123,3 +123,21 @@ const SEND_TIME_BOUND: Duration = Duration::from_micros(50);
 /// generated from the endpoint (retry or initial close) can be dropped when this limit is being execeeded.
 /// Chose to represent 100 MB of data.
 const MAX_TRANSMIT_QUEUE_CONTENTS_LEN: usize = 100_000_000;
+
+fn udp_transmit(t: proto::Transmit, buffer: Bytes) -> udp::Transmit {
+    udp::Transmit {
+        destination: t.destination,
+        ecn: t.ecn.map(udp_ecn),
+        contents: buffer,
+        segment_size: t.segment_size,
+        src_ip: t.src_ip,
+    }
+}
+
+fn udp_ecn(ecn: proto::EcnCodepoint) -> udp::EcnCodepoint {
+    match ecn {
+        proto::EcnCodepoint::Ect0 => udp::EcnCodepoint::Ect0,
+        proto::EcnCodepoint::Ect1 => udp::EcnCodepoint::Ect1,
+        proto::EcnCodepoint::Ce => udp::EcnCodepoint::Ce,
+    }
+}

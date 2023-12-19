@@ -12,7 +12,10 @@ use std::{
     time::Instant,
 };
 
-use crate::runtime::{default_runtime, AsyncUdpSocket, Runtime};
+use crate::{
+    runtime::{default_runtime, AsyncUdpSocket, Runtime},
+    udp_transmit,
+};
 use bytes::{Bytes, BytesMut};
 use pin_project_lite::pin_project;
 use proto::{
@@ -562,26 +565,6 @@ impl State {
         }
 
         true
-    }
-}
-
-#[inline]
-fn udp_transmit(t: proto::Transmit, buffer: Bytes) -> udp::Transmit {
-    udp::Transmit {
-        destination: t.destination,
-        ecn: t.ecn.map(udp_ecn),
-        contents: buffer,
-        segment_size: t.segment_size,
-        src_ip: t.src_ip,
-    }
-}
-
-#[inline]
-fn udp_ecn(ecn: proto::EcnCodepoint) -> udp::EcnCodepoint {
-    match ecn {
-        proto::EcnCodepoint::Ect0 => udp::EcnCodepoint::Ect0,
-        proto::EcnCodepoint::Ect1 => udp::EcnCodepoint::Ect1,
-        proto::EcnCodepoint::Ce => udp::EcnCodepoint::Ce,
     }
 }
 
