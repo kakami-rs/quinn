@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::{
-    runtime::{default_runtime, AsyncUdpSocket, Runtime},
+    runtime::{default_runtime, AsyncUdpSocket, Runtime, UdpPoller},
     udp_transmit,
 };
 use bytes::{Bytes, BytesMut};
@@ -216,6 +216,7 @@ impl Endpoint {
         let socket = self.runtime.wrap_udp_socket(socket)?;
         let mut inner = self.inner.state.lock().unwrap();
         inner.socket = socket;
+        inner.io_poller = inner.socket.clone().create_io_poller();
         inner.ipv6 = addr.is_ipv6();
 
         // Generate some activity so peers notice the rebind
@@ -372,6 +373,7 @@ pub(crate) struct EndpointInner {
 #[derive(Debug)]
 pub(crate) struct State {
     socket: Arc<dyn AsyncUdpSocket>,
+    io_poller: Pin<Box<dyn UdpPoller>>,
     inner: proto::Endpoint,
     outgoing: VecDeque<udp::Transmit>,
     incoming: VecDeque<Connecting>,
@@ -503,8 +505,12 @@ impl State {
                 break Ok(true);
             }
 
-            match self.socket.poll_send(cx, self.outgoing.as_slices().0) {
-                Poll::Ready(Ok(n)) => {
+            if self.io_poller.as_mut().poll_writable(cx)?.is_pending() {
+                break Ok(false);
+            }
+
+            match self.socket.try_send(self.outgoing.as_slices().0) {
+                Ok(n) => {
                     let contents_len: usize =
                         self.outgoing.drain(..n).map(|t| t.contents.len()).sum();
                     self.transmit_queue_contents_len = self
@@ -514,10 +520,10 @@ impl State {
                     // of a `sendmmsg` still linearly increases with number of packets.
                     self.send_limiter.record_work(n);
                 }
-                Poll::Pending => {
-                    break Ok(false);
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
                 }
-                Poll::Ready(Err(e)) => {
+                Err(e) => {
                     break Err(e);
                 }
             }
@@ -678,6 +684,7 @@ impl EndpointRef {
                 idle: Notify::new(),
             },
             state: Mutex::new(State {
+                io_poller: socket.clone().create_io_poller(),
                 socket,
                 inner,
                 ipv6,
