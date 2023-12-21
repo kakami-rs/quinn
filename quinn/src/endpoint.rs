@@ -463,10 +463,10 @@ impl State {
                                     // lost due to congestion further along the link, which
                                     // similarly relies on peer retries for recovery.
                                     let contents_len = transmit.size;
-                                    _ = self.socket.try_send(&[udp_transmit(
+                                    _ = self.socket.try_send(&udp_transmit(
                                         transmit,
                                         response_buffer.split_to(contents_len).freeze(),
-                                    )]);
+                                    ));
                                 }
                                 None => {}
                             }

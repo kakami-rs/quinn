@@ -916,10 +916,11 @@ impl State {
                 return Ok(false);
             }
 
-            let result = self.socket.try_send(std::slice::from_ref(&t));
+            let result = self.socket.try_send(&t);
             if result
                 .as_ref()
-                .map_or_else(|e| e.kind() == io::ErrorKind::WouldBlock, |&n| n == 0)
+                .err()
+                .map_or(false, |e| e.kind() == io::ErrorKind::WouldBlock)
             {
                 // Retry immediately
                 self.buffered_transmit = Some(t);
