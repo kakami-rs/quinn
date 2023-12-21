@@ -26,12 +26,7 @@ impl UdpSocketState {
         }
     }
 
-    pub fn send(
-        &self,
-        socket: UdpSockRef<'_>,
-        _state: &UdpState,
-        transmits: &[Transmit],
-    ) -> io::Result<usize> {
+    pub fn send(&self, socket: UdpSockRef<'_>, transmits: &[Transmit]) -> io::Result<usize> {
         let mut sent = 0;
         for transmit in transmits {
             match socket.0.send_to(
