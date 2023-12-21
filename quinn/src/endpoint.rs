@@ -414,7 +414,7 @@ impl State {
                         let mut data: BytesMut = buf[0..meta.len].into();
                         while !data.is_empty() {
                             let buf = data.split_to(meta.stride.min(data.len()));
-                            let mut response_buffer = BytesMut::new();
+                            let mut response_buffer = Vec::new();
                             match self.inner.handle(
                                 now,
                                 meta.addr,
