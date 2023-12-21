@@ -150,7 +150,7 @@ impl UdpSocketState {
         })
     }
 
-    pub fn send(&self, socket: UdpSockRef<'_>, transmit: &Transmit) -> io::Result<()> {
+    pub fn send(&self, socket: UdpSockRef<'_>, transmit: &Transmit<'_>) -> io::Result<()> {
         send(self, socket.0, transmit)
     }
 
@@ -207,7 +207,7 @@ fn send(
     #[allow(unused_variables)] // only used on Linux
     state: &UdpSocketState,
     io: SockRef<'_>,
-    transmit: &Transmit,
+    transmit: &Transmit<'_>,
 ) -> io::Result<()> {
     #[allow(unused_mut)] // only mutable on FreeBSD
     let mut encode_src_ip = true;
@@ -288,7 +288,7 @@ fn send(
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-fn send(state: &UdpSocketState, io: SockRef<'_>, transmit: &Transmit) -> io::Result<()> {
+fn send(state: &UdpSocketState, io: SockRef<'_>, transmit: &Transmit<'_>) -> io::Result<()> {
     let mut hdr: libc::msghdr = unsafe { mem::zeroed() };
     let mut iov: libc::iovec = unsafe { mem::zeroed() };
     let mut ctrl = cmsg::Aligned([0u8; CMSG_LEN]);
@@ -461,7 +461,7 @@ unsafe fn recvmmsg_fallback(
 const CMSG_LEN: usize = 88;
 
 fn prepare_msg(
-    transmit: &Transmit,
+    transmit: &Transmit<'_>,
     dst_addr: &socket2::SockAddr,
     hdr: &mut libc::msghdr,
     iov: &mut libc::iovec,

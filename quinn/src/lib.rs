@@ -60,7 +60,6 @@ mod runtime;
 mod send_stream;
 mod work_limiter;
 
-use bytes::Bytes;
 pub use proto::{
     congestion, crypto, AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ConfigError,
     ConnectError, ConnectionClose, ConnectionError, EndpointConfig, IdleTimeout,
@@ -110,7 +109,7 @@ const IO_LOOP_BOUND: usize = 160;
 /// batch of size 32 was observed to take 30us on some systems.
 const RECV_TIME_BOUND: Duration = Duration::from_micros(50);
 
-fn udp_transmit(t: proto::Transmit, buffer: Bytes) -> udp::Transmit {
+fn udp_transmit<'a>(t: &proto::Transmit, buffer: &'a [u8]) -> udp::Transmit<'a> {
     udp::Transmit {
         destination: t.destination,
         ecn: t.ecn.map(udp_ecn),
