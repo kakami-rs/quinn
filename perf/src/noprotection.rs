@@ -147,7 +147,7 @@ impl crypto::ServerConfig for NoProtectionServerConfig {
         version: u32,
         dst_cid: &ConnectionId,
         side: Side,
-    ) -> Result<crypto::Keys, crypto::UnsupportedVersion> {
+    ) -> Result<crypto::Keys, crypto::CryptoError> {
         self.inner.initial_keys(version, dst_cid, side)
     }
 

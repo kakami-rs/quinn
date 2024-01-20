@@ -9,9 +9,7 @@ use rustls::{
 };
 
 use crate::{
-    crypto::{
-        self, CryptoError, ExportKeyingMaterialError, HeaderKey, KeyPair, Keys, UnsupportedVersion,
-    },
+    crypto::{self, CryptoError, ExportKeyingMaterialError, HeaderKey, KeyPair, Keys},
     transport_parameters::TransportParameters,
     ConnectError, ConnectionId, Side, TransportError, TransportErrorCode,
 };
@@ -295,7 +293,7 @@ impl crypto::ServerConfig for rustls::ServerConfig {
         version: u32,
         dst_cid: &ConnectionId,
         side: Side,
-    ) -> Result<Keys, UnsupportedVersion> {
+    ) -> Result<Keys, CryptoError> {
         let version = interpret_version(version)?;
         Ok(initial_keys(version, dst_cid, side))
     }
@@ -361,7 +359,7 @@ impl crypto::PacketKey for PacketKey {
     ) -> Result<(), CryptoError> {
         let plain = self
             .decrypt_in_place(packet, header, payload.as_mut())
-            .map_err(|_| CryptoError)?;
+            .map_err(|_| CryptoError::Other)?;
         let plain_len = plain.len();
         payload.truncate(plain_len);
         Ok(())
@@ -416,10 +414,10 @@ pub(crate) fn server_config(
     Ok(cfg)
 }
 
-fn interpret_version(version: u32) -> Result<Version, UnsupportedVersion> {
+fn interpret_version(version: u32) -> Result<Version, CryptoError> {
     match version {
         0xff00_001d..=0xff00_0020 => Ok(Version::V1Draft),
         0x0000_0001 | 0xff00_0021..=0xff00_0022 => Ok(Version::V1),
-        _ => Err(UnsupportedVersion),
+        _ => Err(CryptoError::UnsupportedVersion),
     }
 }

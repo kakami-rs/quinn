@@ -11,6 +11,7 @@
 use std::{any::Any, str, sync::Arc};
 
 use bytes::BytesMut;
+use thiserror::Error;
 
 use crate::{
     shared::ConnectionId, transport_parameters::TransportParameters, ConnectError, Side,
@@ -128,7 +129,7 @@ pub trait ServerConfig: Send + Sync {
         version: u32,
         dst_cid: &ConnectionId,
         side: Side,
-    ) -> Result<Keys, UnsupportedVersion>;
+    ) -> Result<Keys, CryptoError>;
 
     /// Generate the integrity tag for a retry packet
     ///
@@ -209,16 +210,13 @@ pub trait AeadKey {
     ) -> Result<&'a mut [u8], CryptoError>;
 }
 
-/// Generic crypto errors
-#[derive(Debug)]
-pub struct CryptoError;
-
-/// Error indicating that the specified QUIC version is not supported
-#[derive(Debug)]
-pub struct UnsupportedVersion;
-
-impl From<UnsupportedVersion> for ConnectError {
-    fn from(_: UnsupportedVersion) -> Self {
-        Self::UnsupportedVersion
-    }
+/// Crypto layer errors
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum CryptoError {
+    /// Error from the cryptographic session layer
+    #[error("crypto error")]
+    Other,
+    /// Specified QUIC version is not supported
+    #[error("unsupported QUIC protocol version")]
+    UnsupportedVersion,
 }
