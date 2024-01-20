@@ -288,14 +288,9 @@ impl crypto::ServerConfig for rustls::ServerConfig {
         })
     }
 
-    fn initial_keys(
-        &self,
-        version: u32,
-        dst_cid: &ConnectionId,
-        side: Side,
-    ) -> Result<Keys, CryptoError> {
+    fn initial_keys(&self, version: u32, dst_cid: &ConnectionId) -> Result<Keys, CryptoError> {
         let version = interpret_version(version)?;
-        Ok(initial_keys(version, dst_cid, side))
+        Ok(initial_keys(version, dst_cid, Side::Server))
     }
 
     fn retry_tag(&self, version: u32, orig_dst_cid: &ConnectionId, packet: &[u8]) -> [u8; 16] {

@@ -124,12 +124,7 @@ pub trait ClientConfig: Send + Sync {
 /// Server-side configuration for the crypto protocol
 pub trait ServerConfig: Send + Sync {
     /// Create the initial set of keys given the client's initial destination ConnectionId
-    fn initial_keys(
-        &self,
-        version: u32,
-        dst_cid: &ConnectionId,
-        side: Side,
-    ) -> Result<Keys, CryptoError>;
+    fn initial_keys(&self, version: u32, dst_cid: &ConnectionId) -> Result<Keys, CryptoError>;
 
     /// Generate the integrity tag for a retry packet
     ///

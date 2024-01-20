@@ -28,7 +28,7 @@ use crate::{
         EndpointEventInner, IssuedCid,
     },
     transport_parameters::TransportParameters,
-    ResetToken, RetryToken, Side, Transmit, TransportConfig, TransportError, INITIAL_MTU,
+    ResetToken, RetryToken, Transmit, TransportConfig, TransportError, INITIAL_MTU,
     MAX_CID_SIZE, MIN_INITIAL_SIZE, RESET_TOKEN_SIZE,
 };
 
@@ -216,10 +216,7 @@ impl Endpoint {
                 return None;
             }
 
-            let crypto = match server_config
-                .crypto
-                .initial_keys(version, dst_cid, Side::Server)
-            {
+            let crypto = match server_config.crypto.initial_keys(version, dst_cid) {
                 Ok(keys) => keys,
                 Err(CryptoError::UnsupportedVersion) => {
                     // This probably indicates that the user set supported_versions incorrectly in
